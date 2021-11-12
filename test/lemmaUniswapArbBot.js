@@ -63,6 +63,11 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     if (uniswapPrice.gt(mintPriceOnLemma)) {
         //mint USDL and sell
 
+
+    }
+    else {
+        //buy USDL and redeem
+
         //this implementation is not
         // const k = reserveCollateral.mul(reserveUSDL);
         // const estimatedUSDLBuyPrice = reserveCollateral.mul(utils.parseEther("1")).div(reserveUSDL);
@@ -72,9 +77,6 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
 
         // amountOfCollateralToBorrow = optimalAmountOfCollateralToBorrow;
         amountOfUSDLToMint = 0;//should be zero
-    }
-    else {
-        //buy USDL and redeem
 
     }
     return [amountOfCollateralToBorrow, amountOfUSDLToMint];
