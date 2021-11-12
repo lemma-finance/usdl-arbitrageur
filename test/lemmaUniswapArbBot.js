@@ -45,6 +45,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     };
     await usdLemma.approve(swapRouter.address, MaxUint256);
 
+    // NOTE: We need this to be the price to buy 1e18 USDL, expressed in WETH
     const uniswapPrice = await swapRouter.callStatic.exactInputSingle(exactInputSingleParams);
     console.log("uniswap Price", uniswapPrice.toString());
 
@@ -55,18 +56,63 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     const uniswapV3PoolAddress = await uniswapV3Factory.getPool(collateral.address, usdLemma.address, poolFee);
     const reserveCollateral = await collateral.balanceOf(uniswapV3PoolAddress);
     const reserveUSDL = await usdLemma.balanceOf(uniswapV3PoolAddress);
+    const k = reserveUSDL * reserveCollateral;
+    const targetUSDLReserves = BigNumber(Math.sqrt(k * 1e18 / mintPriceOnLemma));
 
+    const lpFees = BigNumber("3000");
+    const loanFees = BigNumber("3000");
+    const lpFeesMultiplier = BigNumber("1e6").div(BigNumber("1e6").sub(lpFees));
+    const loanFeesMultiplier = BigNumber("1e6").div(BigNumber("1e6").sub(loanFees));
 
     let amountOfCollateralToBorrow;
     let amountOfUSDLToMint;
+
     //TODO:@nicola implement the logic for optimum amount below
     if (uniswapPrice.gt(mintPriceOnLemma)) {
         //mint USDL and sell
+        if (targetUSDLReserves.lt(reserveUSDL)) {
+            console.log("WARNING: MintAndSell Arb Expected but not detected");
+            // TODO: Manage this situation better
+            return [0,0];
+        }
 
+        const amountOfUSDLToMint = targetUSDLReserves.sub(reserveUSDL);
+        //const amountOfUSDLToMint = targetUSDLReserves - reserveUSDL;
+
+        // Q: Does it include all the minting fees? 
+        amountOfCollateralToBorrow = (amountOfUSDLToMint.mul(mintPriceOnLemma).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
+        const amountOwed = amountOfCollateralToBorrow.mul(loanFeesMultiplier);
+        //const amountOfCollateralToBorrow = (amountOfUSDLToMint * mintPriceOnLemma / 1e18);
+
+        const estimatedWETHReturn = amountOfUSDLToMint.div(lpFeesMultiplier).mul(uniswapPrice).div(utils.parseEther("1"));
+        if (estimatedWETHReturn.lt(amountOwed)) {
+            console.log("Mint and Sell Arb present but too small compared to the loan fees");
+            return [0,0];
+        }
+        const estimatedProfit = estimatedWETHReturn.sub(amountOwed);
+        //estimatedWETHReturn = amountOfUSDLToMint * uniswapPrice / 1e18;
 
     }
     else {
         //buy USDL and redeem
+        // Q: Should not we use the RedeemPrice here? 
+        if (targetUSDLReserves.gt(reserveUSDL)) {
+            console.log("WARNING: BuyAndRedeem Arb Expected but not detected");
+            // TODO: Manage this situation better
+            return [0,0];
+        }
+
+        const amountOfUSDLToBuy = reserveUSDL.sub(targetUSDLReserves);
+        amountOfCollateralToBorrow = (amountOfUSDLToBuy.mul(uniswapPrice).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
+        const amountOwed = amountOfCollateralToBorrow.mul(loanFeesMultiplier);
+
+        const estimatedWETHReturn = amountOfUSDLToBuy.div(lpFeesMultiplier).mul(uniswapPrice).div(utils.parseEther("1"));
+
+        if (estimatedWETHReturn.lt(amountOwed)) {
+            console.log("Redeeem and Buy Arb present but too small compared to the loan fees");
+            return [0,0];
+        }
+        const estimatedProfit = estimatedWETHReturn.sub(amountOwed);
 
         //this implementation is not
         // const k = reserveCollateral.mul(reserveUSDL);
@@ -79,6 +125,9 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
         amountOfUSDLToMint = 0;//should be zero
 
     }
+
+    console.log(`Arb Params: type=${amountOfUSDLToMint > 0 ? "MintAndSell" : "RedeemAndBuy"}, amountOfUSDLToMint=${amountOfUSDLToMint}, amountOfCollateralToBorrow=${amountOfCollateralToBorrow}, estimatedProfit=${estimatedProfit}`);
+    // TODO: Get them from the pools
     return [amountOfCollateralToBorrow, amountOfUSDLToMint];
 };
 
