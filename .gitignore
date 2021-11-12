@@ -1,0 +1,11 @@
+node_modules
+.env
+
+#Hardhat files
+cache
+artifacts
+
+
+##solidity-coverage
+coverage.json
+coverage
