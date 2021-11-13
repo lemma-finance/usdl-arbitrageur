@@ -50,6 +50,9 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     const mintPriceOnLemma = await perpetualDEXWrapper.callStatic.getCollateralAmountGivenUnderlyingAssetAmount(utils.parseEther("1"), true);
     console.log("mintPriceOnLemma", mintPriceOnLemma.toString());
 
+    const redeemPriceOnLemma = mintPriceOnLemma;
+    console.log("redeemPriceOnLemma", redeemPriceOnLemma.toString());
+
     //@dev here this is an unefficient way of reading the uniswap price 
     const exactInputSingleParams = {
         tokenIn: usdLemma.address,
@@ -90,8 +93,19 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     let estimatedProfit;
 
     //TODO:@nicola implement the logic for optimum amount below
+
+    if (mintPriceOnLemma.lt(redeemPriceOnLemma)) {
+        console.log(`WARNING: Arb within MCDex since mintPriceOnLemma=${mintPriceOnLemma} < redeemPriceOnLemma=${redeemPriceOnLemma}`);
+        return [0,0];
+    }
+
+    if (mintPriceOnLemma.gt(redeemPriceOnLemma) && uniswapPrice.gt(redeemPriceOnLemma) && uniswapPrice.lt(mintPriceOnLemma)) {
+        console.log(`uniswapPrice in the Lemma Mint-Redeem Spread --> So no arb on Uniswap Possible\nuniswapPrice=${uniswapPrice}, mintPriceOnLemma=${mintPriceOnLemma}, redeemPriceOnLemma=${redeemPriceOnLemma}`);
+        return [0,0];
+    }
+
     if (uniswapPrice.gt(mintPriceOnLemma)) {
-        //mint USDL and sell
+        // Uniswap Price too high --> mint USDL and sell
         if (targetUSDLReserves.lt(reserveUSDL)) {
             console.log("WARNING: MintAndSell Arb Expected but not detected");
             // TODO: Manage this situation better
@@ -119,8 +133,8 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
         //estimatedWETHReturn = amountOfUSDLToMint * uniswapPrice / 1e18;
 
     }
-    else {
-        //buy USDL and redeem
+    if(uniswapPrice.lt(redeemPriceOnLemma)) {
+        // Uniswap Price is too low --> buy USDL and redeem
         // Q: Should not we use the RedeemPrice here? 
         if (targetUSDLReserves.gt(reserveUSDL)) {
             console.log("WARNING: BuyAndRedeem Arb Expected but not detected");
@@ -137,7 +151,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
         amountOfCollateralToBorrow = (amountOfUSDLToBuy.mul(uniswapPrice).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
         const amountOwed = amountOfCollateralToBorrow.mul(loanFeesMultiplier);
 
-        const estimatedWETHReturn = amountOfUSDLToBuy.div(lpFeesMultiplier).mul(mintPriceOnLemma).div(utils.parseEther("1"));
+        const estimatedWETHReturn = amountOfUSDLToBuy.div(lpFeesMultiplier).mul(redeemPriceOnLemma).div(utils.parseEther("1"));
 
         if (estimatedWETHReturn.lt(amountOwed)) {
             console.log("Redeeem and Buy Arb present but too small compared to the loan fees");
