@@ -10,6 +10,8 @@ const { TICK_SPACINGS, FeeAmount, encodePriceSqrt, getMaxTick, getMinTick } = re
 
 const INonfungiblePositionManager = require("@uniswap/v3-periphery/artifacts/contracts/interfaces/INonfungiblePositionManager.sol/INonfungiblePositionManager.json");
 const IUniswapV3Factory = require("@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Factory.sol/IUniswapV3Factory.json");
+const IUniswapV3Pool = require("@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json");
+const IUniswapV3PoolState = require("@uniswap/v3-core/artifacts/contracts/interfaces/pool/IUniswapV3PoolState.sol/IUniswapV3PoolState.json");
 
 const printTx = async (hash) => {
     await tokenTransfers.print(hash, [], false);
@@ -26,22 +28,49 @@ async function mineBlocks(blockNumber) {
 }
 
 
-
 /*
-const ONE = ethers.BigNumber.from(1);
-const TWO = ethers.BigNumber.from(2);
-
-function sqrt(value) {
-    x = ethers.BigNumber.from(value);
-    let z = x.add(ONE).div(TWO);
-    let y = x;
-    while (z.sub(y).isNegative()) {
-        y = z;
-        z = x.div(z).add(z).div(TWO);
-    }
-    return y;
+function getUniswapMarginalPrice(pool) {
+    res = pool.callStatic.slot0();
+    console.dir(res);
+    //slot.uniswap_X_WETH_for_1E18_USDL =  (uint256(sqrtPriceX96) ** 2) * 1e18 / (2 ** 192);
+    return 0;
 }
 */
+
+// Use to compute percentages
+const BN1E6 = BigNumber.from("1000000");
+
+
+/**
+ * This function should estimate the real execution price given from marginal price and the amount 
+ * Currently there is only a trivial implementation considering a fixed amount of slippage but with UniswapV3 it actually depends on the specific shape of the curve which is non trivial to estimate because of concentrate liquidity
+ * @param {BigNumber} marginalPrice 
+ * @param {BigNumber} amount 
+ * @param {Int: 0,1} direction: 0 = Sell, 1 = Buy
+ */
+function estimateExecutionPrice(marginalPrice, amount, direction) {
+    // Considering a max 2% slippage
+    const maxSlippage = BigNumber.from("20000");
+    if (direction == 0) {
+        // Sell --> Slippage reduce the price 
+        return marginalPrice.mul(BN1E6.div(BN1E6.add(maxSlippage)));
+    }
+    else if(direction == 1) {
+        // Buy --> Slippage increases the price
+        return marginalPrice.mul((BN1E6.add(maxSlippage)).div(BN1E6));
+    }
+    return 0;
+}
+
+/**
+ * This function should estimate the real execution price given from marginal price and the amount 
+ * Currently there is only a trivial implementation considering a fixed amount of slippage but with UniswapV3 it actually depends on the specific shape of the curve which is non trivial to estimate because of concentrate liquidity
+ * @param {BigNumber} marginalPrice 
+ * @param {BigNumber} targetPrice
+ */
+function estimateExecutionPriceOnPriceDelta(marginalPrice, targetPrice) {
+    return (marginalPrice.add(targetPrice)).div(BigNumber.from("2"));
+}
 
 const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRouter, usdLemma, perpetualDEXWrapper, collateral, uniswapV3Factory, poolFee) => {
 
@@ -50,6 +79,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     const mintPriceOnLemma = await perpetualDEXWrapper.callStatic.getCollateralAmountGivenUnderlyingAssetAmount(utils.parseEther("1"), true);
     console.log("mintPriceOnLemma", mintPriceOnLemma.toString());
 
+    // TODO: Check this 
     const redeemPriceOnLemma = mintPriceOnLemma;
     console.log("redeemPriceOnLemma", redeemPriceOnLemma.toString());
 
@@ -70,6 +100,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     const uniswapPrice = await swapRouter.callStatic.exactInputSingle(exactInputSingleParams);
     console.log("uniswap Price", uniswapPrice.toString());
 
+
     //given target price mintPriceOnLemma, we need to calculate the optimum amount of collateral to swap
     //To come up with that number we are treating a uniswap V3 pool as a uniswap V2 pool and not really considering the fees
     //You should improve below to stay competitive
@@ -77,6 +108,8 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     const uniswapV3PoolAddress = await uniswapV3Factory.getPool(collateral.address, usdLemma.address, poolFee);
     const reserveCollateral = await collateral.balanceOf(uniswapV3PoolAddress);
     const reserveUSDL = await usdLemma.balanceOf(uniswapV3PoolAddress);
+    //const pool = await ethers.getContractAt("IUniswapV3PoolState", uniswapV3PoolAddress); 
+    //getUniswapMarginalPrice(IUniswapV3Pool(pool));
     const k = reserveUSDL.mul(reserveCollateral);
     const temp = (k.mul(utils.parseEther("1")).div(mintPriceOnLemma));
     //console.dir(temp)
@@ -85,12 +118,13 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
 
     const lpFees = BigNumber.from("3000");
     const loanFees = BigNumber.from("3000");
-    const lpFeesMultiplier = BigNumber.from("1000000").div(BigNumber.from("1000000").sub(lpFees));
-    const loanFeesMultiplier = BigNumber.from("1000000").div(BigNumber.from("1000000").sub(loanFees));
+    const lpFeesMultiplier = BN1E6.div(BN1E6.sub(lpFees));
+    const loanFeesMultiplier = BN1E6.div(BN1E6.sub(loanFees));
 
     let amountOfCollateralToBorrow;
     let amountOfUSDLToMint;
-    let estimatedProfit;
+    let estimatedProfitMin;
+    let estimatedProfitMax;
 
     //TODO:@nicola implement the logic for optimum amount below
 
@@ -114,6 +148,9 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
 
         console.log("Starting Mint and Sell");
 
+        const estimatedExecutionPrice = estimateExecutionPriceOnPriceDelta(uniswapPrice, mintPriceOnLemma);
+        console.log(`uniswapPrice=${uniswapPrice}, mintPriceOnLemma=${mintPriceOnLemma}, estimatedExecutionPrice=${estimatedExecutionPrice}`);
+
         amountOfUSDLToMint = targetUSDLReserves.sub(reserveUSDL);
         //const amountOfUSDLToMint = targetUSDLReserves - reserveUSDL;
 
@@ -124,15 +161,17 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
         const amountOwed = amountOfCollateralToBorrow.mul(loanFeesMultiplier);
         //const amountOfCollateralToBorrow = (amountOfUSDLToMint * mintPriceOnLemma / 1e18);
 
-        const estimatedWETHReturn = amountOfUSDLToMint.div(lpFeesMultiplier).mul(uniswapPrice).div(utils.parseEther("1"));
+        //const estimatedWETHReturnMax = amountOfUSDLToMint.div(lpFeesMultiplier).mul(uniswapPrice).div(utils.parseEther("1"));
+        const estimatedWETHReturn = amountOfUSDLToMint.div(lpFeesMultiplier).mul(estimatedExecutionPrice).div(utils.parseEther("1"));
         if (estimatedWETHReturn.lt(amountOwed)) {
             console.log("Mint and Sell Arb present but too small compared to the loan fees");
             return [0,0];
         }
+
         estimatedProfit = estimatedWETHReturn.sub(amountOwed);
         //estimatedWETHReturn = amountOfUSDLToMint * uniswapPrice / 1e18;
-
     }
+
     if(uniswapPrice.lt(redeemPriceOnLemma)) {
         // Uniswap Price is too low --> buy USDL and redeem
         // Q: Should not we use the RedeemPrice here? 
@@ -144,11 +183,16 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
 
         console.log("Starting Redeem and Buy");
 
+        const estimatedExecutionPrice = estimateExecutionPriceOnPriceDelta(uniswapPrice, redeemPriceOnLemma);
+        console.log(`uniswapPrice=${uniswapPrice}, redeemPriceOnLemma=${redeemPriceOnLemma}, estimatedExecutionPrice=${estimatedExecutionPrice}`);
+
         const amountOfUSDLToBuy = reserveUSDL.sub(targetUSDLReserves);
 
         console.log(`targetUSDLReserves=${targetUSDLReserves}, reserveUSDL=${reserveUSDL}, amountOfUSDLToBuy=${amountOfUSDLToBuy}`);
 
-        amountOfCollateralToBorrow = (amountOfUSDLToBuy.mul(uniswapPrice).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
+        amountOfCollateralToBorrow = (amountOfUSDLToBuy.mul(estimateExecutionPriceOnPriceDelta(uniswapPrice, redeemPriceOnLemma)).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
+        //amountOfCollateralToBorrow = (amountOfUSDLToBuy.mul(uniswapPrice).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
+
         const amountOwed = amountOfCollateralToBorrow.mul(loanFeesMultiplier);
 
         const estimatedWETHReturn = amountOfUSDLToBuy.div(lpFeesMultiplier).mul(redeemPriceOnLemma).div(utils.parseEther("1"));
@@ -280,6 +324,26 @@ describe('LemmaRouter', function () {
             let tx = await this.bot.arb(utils.parseEther("1"), 0);
             await tx.wait();
             await printTx(tx.hash);
+
+            /*
+            //@dev here this is an unefficient way of reading the uniswap price 
+            const exactInputSingleParams = {
+                tokenIn: usdLemma.address,
+                tokenOut: collateral.address,
+                fee: poolFee,
+                recipient: defaultSigner.address,
+                deadline: MaxUint256,
+                amountIn: utils.parseEther("1"),
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0,
+            };
+            
+            await this.usdLemma.approve(this.swapRouter.address, MaxUint256);
+
+            // NOTE: We need this to be the price to buy 1e18 USDL, expressed in WETH
+            const uniswapPrice = await this.swapRouter.callStatic.exactInputSingle(exactInputSingleParams);
+            console.log("[AfterTrade] uniswap Price", uniswapPrice.toString());
+            */
         });
         it("when uniswap price is <1$", async function () {
             // Initialize pool
@@ -312,7 +376,27 @@ describe('LemmaRouter', function () {
             let tx = await this.bot.arb(utils.parseEther("1"), utils.parseEther("1").mul(BigNumber.from("1800")));
             await tx.wait();
             await printTx(tx.hash);
-        });
-    });
 
+            /*
+            //@dev here this is an unefficient way of reading the uniswap price 
+            const exactInputSingleParams = {
+                tokenIn: usdLemma.address,
+                tokenOut: collateral.address,
+                fee: poolFee,
+                recipient: defaultSigner.address,
+                deadline: MaxUint256,
+                amountIn: utils.parseEther("1"),
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0,
+            };
+            
+            await this.usdLemma.approve(this.swapRouter.address, MaxUint256);
+
+            // NOTE: We need this to be the price to buy 1e18 USDL, expressed in WETH
+            const uniswapPrice = await this.swapRouter.callStatic.exactInputSingle(exactInputSingleParams);
+            console.log("[AfterTrade] uniswap Price", uniswapPrice.toString());
+            */
+                });
+            });
+            
 });
