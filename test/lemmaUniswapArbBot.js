@@ -55,7 +55,7 @@ function estimateExecutionPrice(marginalPrice, amount, direction) {
         // Sell --> Slippage reduce the price 
         return marginalPrice.mul(BN1E6.div(BN1E6.add(maxSlippage)));
     }
-    else if(direction == 1) {
+    else if (direction == 1) {
         // Buy --> Slippage increases the price
         return marginalPrice.mul((BN1E6.add(maxSlippage)).div(BN1E6));
     }
@@ -130,12 +130,12 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
 
     if (mintPriceOnLemma.lt(redeemPriceOnLemma)) {
         console.log(`WARNING: Arb within MCDex since mintPriceOnLemma=${mintPriceOnLemma} < redeemPriceOnLemma=${redeemPriceOnLemma}`);
-        return [0,0];
+        return [0, 0];
     }
 
     if (mintPriceOnLemma.gt(redeemPriceOnLemma) && uniswapPrice.gt(redeemPriceOnLemma) && uniswapPrice.lt(mintPriceOnLemma)) {
         console.log(`uniswapPrice in the Lemma Mint-Redeem Spread --> So no arb on Uniswap Possible\nuniswapPrice=${uniswapPrice}, mintPriceOnLemma=${mintPriceOnLemma}, redeemPriceOnLemma=${redeemPriceOnLemma}`);
-        return [0,0];
+        return [0, 0];
     }
 
     if (uniswapPrice.gt(mintPriceOnLemma)) {
@@ -143,7 +143,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
         if (targetUSDLReserves.lt(reserveUSDL)) {
             console.log("WARNING: MintAndSell Arb Expected but not detected");
             // TODO: Manage this situation better
-            return [0,0];
+            return [0, 0];
         }
 
         console.log("Starting Mint and Sell");
@@ -165,20 +165,20 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
         const estimatedWETHReturn = amountOfUSDLToMint.div(lpFeesMultiplier).mul(estimatedExecutionPrice).div(utils.parseEther("1"));
         if (estimatedWETHReturn.lt(amountOwed)) {
             console.log("Mint and Sell Arb present but too small compared to the loan fees");
-            return [0,0];
+            return [0, 0];
         }
 
         estimatedProfit = estimatedWETHReturn.sub(amountOwed);
         //estimatedWETHReturn = amountOfUSDLToMint * uniswapPrice / 1e18;
     }
 
-    if(uniswapPrice.lt(redeemPriceOnLemma)) {
+    if (uniswapPrice.lt(redeemPriceOnLemma)) {
         // Uniswap Price is too low --> buy USDL and redeem
         // Q: Should not we use the RedeemPrice here? 
         if (targetUSDLReserves.gt(reserveUSDL)) {
             console.log("WARNING: BuyAndRedeem Arb Expected but not detected");
             // TODO: Manage this situation better
-            return [0,0];
+            return [0, 0];
         }
 
         console.log("Starting Redeem and Buy");
@@ -199,7 +199,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
 
         if (estimatedWETHReturn.lt(amountOwed)) {
             console.log("Redeeem and Buy Arb present but too small compared to the loan fees");
-            return [0,0];
+            return [0, 0];
         }
 
         estimatedProfit = estimatedWETHReturn.sub(amountOwed);
@@ -321,15 +321,15 @@ describe('LemmaRouter', function () {
             await this.nonfungiblePositionManager.mint(liquidityParams);
 
             const [amountOfCollateralToBorrow, amountOfUSDLToMint] = await calculateOptimumWETHToBorrowAndUSDLToMint(defaultSigner, this.swapRouter, this.usdLemma, this.perpetualDEXWrapper, this.collateral, this.uniswapV3Factory, FeeAmount.MEDIUM);
-            let tx = await this.bot.arb(utils.parseEther("1"), 0);
+            let tx = await this.bot.arb(amountOfCollateralToBorrow, 0);
             await tx.wait();
             await printTx(tx.hash);
 
-            /*
+
             //@dev here this is an unefficient way of reading the uniswap price 
             const exactInputSingleParams = {
-                tokenIn: usdLemma.address,
-                tokenOut: collateral.address,
+                tokenIn: this.usdLemma.address,
+                tokenOut: this.collateral.address,
                 fee: poolFee,
                 recipient: defaultSigner.address,
                 deadline: MaxUint256,
@@ -337,13 +337,13 @@ describe('LemmaRouter', function () {
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0,
             };
-            
+
             await this.usdLemma.approve(this.swapRouter.address, MaxUint256);
 
             // NOTE: We need this to be the price to buy 1e18 USDL, expressed in WETH
             const uniswapPrice = await this.swapRouter.callStatic.exactInputSingle(exactInputSingleParams);
             console.log("[AfterTrade] uniswap Price", uniswapPrice.toString());
-            */
+
         });
         it("when uniswap price is <1$", async function () {
             // Initialize pool
@@ -373,15 +373,15 @@ describe('LemmaRouter', function () {
             //optimum amount of USDL to buy and redeem
             const [amountOfCollateralToBorrow, amountOfUSDLToMint] = await calculateOptimumWETHToBorrowAndUSDLToMint(defaultSigner, this.swapRouter, this.usdLemma, this.perpetualDEXWrapper, this.collateral, this.uniswapV3Factory, FeeAmount.MEDIUM);
 
-            let tx = await this.bot.arb(utils.parseEther("1"), utils.parseEther("1").mul(BigNumber.from("1800")));
+            let tx = await this.bot.arb(amountOfCollateralToBorrow, amountOfUSDLToMint);
             await tx.wait();
             await printTx(tx.hash);
 
-            /*
+
             //@dev here this is an unefficient way of reading the uniswap price 
             const exactInputSingleParams = {
-                tokenIn: usdLemma.address,
-                tokenOut: collateral.address,
+                tokenIn: this.usdLemma.address,
+                tokenOut: this.collateral.address,
                 fee: poolFee,
                 recipient: defaultSigner.address,
                 deadline: MaxUint256,
@@ -389,14 +389,14 @@ describe('LemmaRouter', function () {
                 amountOutMinimum: 0,
                 sqrtPriceLimitX96: 0,
             };
-            
+
             await this.usdLemma.approve(this.swapRouter.address, MaxUint256);
 
             // NOTE: We need this to be the price to buy 1e18 USDL, expressed in WETH
             const uniswapPrice = await this.swapRouter.callStatic.exactInputSingle(exactInputSingleParams);
             console.log("[AfterTrade] uniswap Price", uniswapPrice.toString());
-            */
-                });
-            });
-            
+
+        });
+    });
+
 });
