@@ -25,6 +25,24 @@ async function mineBlocks(blockNumber) {
     }
 }
 
+
+
+/*
+const ONE = ethers.BigNumber.from(1);
+const TWO = ethers.BigNumber.from(2);
+
+function sqrt(value) {
+    x = ethers.BigNumber.from(value);
+    let z = x.add(ONE).div(TWO);
+    let y = x;
+    while (z.sub(y).isNegative()) {
+        y = z;
+        z = x.div(z).add(z).div(TWO);
+    }
+    return y;
+}
+*/
+
 const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRouter, usdLemma, perpetualDEXWrapper, collateral, uniswapV3Factory, poolFee) => {
 
     //get mint price for 1 USDL
@@ -56,16 +74,20 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
     const uniswapV3PoolAddress = await uniswapV3Factory.getPool(collateral.address, usdLemma.address, poolFee);
     const reserveCollateral = await collateral.balanceOf(uniswapV3PoolAddress);
     const reserveUSDL = await usdLemma.balanceOf(uniswapV3PoolAddress);
-    const k = reserveUSDL * reserveCollateral;
-    const targetUSDLReserves = BigNumber(Math.sqrt(k * 1e18 / mintPriceOnLemma));
+    const k = reserveUSDL.mul(reserveCollateral);
+    const temp = (k.mul(utils.parseEther("1")).div(mintPriceOnLemma));
+    //console.dir(temp)
+    const targetUSDLReserves = sqrt(temp);
+    console.log(`targetUSDLReserves=${targetUSDLReserves}`);
 
-    const lpFees = BigNumber("3000");
-    const loanFees = BigNumber("3000");
-    const lpFeesMultiplier = BigNumber("1e6").div(BigNumber("1e6").sub(lpFees));
-    const loanFeesMultiplier = BigNumber("1e6").div(BigNumber("1e6").sub(loanFees));
+    const lpFees = BigNumber.from("3000");
+    const loanFees = BigNumber.from("3000");
+    const lpFeesMultiplier = BigNumber.from("1000000").div(BigNumber.from("1000000").sub(lpFees));
+    const loanFeesMultiplier = BigNumber.from("1000000").div(BigNumber.from("1000000").sub(loanFees));
 
     let amountOfCollateralToBorrow;
     let amountOfUSDLToMint;
+    let estimatedProfit;
 
     //TODO:@nicola implement the logic for optimum amount below
     if (uniswapPrice.gt(mintPriceOnLemma)) {
@@ -76,8 +98,12 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
             return [0,0];
         }
 
-        const amountOfUSDLToMint = targetUSDLReserves.sub(reserveUSDL);
+        console.log("Starting Mint and Sell");
+
+        amountOfUSDLToMint = targetUSDLReserves.sub(reserveUSDL);
         //const amountOfUSDLToMint = targetUSDLReserves - reserveUSDL;
+
+        console.log(`targetUSDLReserves=${targetUSDLReserves}, reserveUSDL=${reserveUSDL}, amountOfUSDLToMint=${amountOfUSDLToMint}`);
 
         // Q: Does it include all the minting fees? 
         amountOfCollateralToBorrow = (amountOfUSDLToMint.mul(mintPriceOnLemma).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
@@ -89,7 +115,7 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
             console.log("Mint and Sell Arb present but too small compared to the loan fees");
             return [0,0];
         }
-        const estimatedProfit = estimatedWETHReturn.sub(amountOwed);
+        estimatedProfit = estimatedWETHReturn.sub(amountOwed);
         //estimatedWETHReturn = amountOfUSDLToMint * uniswapPrice / 1e18;
 
     }
@@ -102,17 +128,24 @@ const calculateOptimumWETHToBorrowAndUSDLToMint = async (defaultSigner, swapRout
             return [0,0];
         }
 
+        console.log("Starting Redeem and Buy");
+
         const amountOfUSDLToBuy = reserveUSDL.sub(targetUSDLReserves);
+
+        console.log(`targetUSDLReserves=${targetUSDLReserves}, reserveUSDL=${reserveUSDL}, amountOfUSDLToBuy=${amountOfUSDLToBuy}`);
+
         amountOfCollateralToBorrow = (amountOfUSDLToBuy.mul(uniswapPrice).div(utils.parseEther("1"))).mul(lpFeesMultiplier);
         const amountOwed = amountOfCollateralToBorrow.mul(loanFeesMultiplier);
 
-        const estimatedWETHReturn = amountOfUSDLToBuy.div(lpFeesMultiplier).mul(uniswapPrice).div(utils.parseEther("1"));
+        const estimatedWETHReturn = amountOfUSDLToBuy.div(lpFeesMultiplier).mul(mintPriceOnLemma).div(utils.parseEther("1"));
 
         if (estimatedWETHReturn.lt(amountOwed)) {
             console.log("Redeeem and Buy Arb present but too small compared to the loan fees");
             return [0,0];
         }
-        const estimatedProfit = estimatedWETHReturn.sub(amountOwed);
+
+        estimatedProfit = estimatedWETHReturn.sub(amountOwed);
+        console.log(`estimatedWETHReturn=${estimatedWETHReturn}, amountOwed=${amountOwed}, estimatedProfit=${estimatedProfit}`);
 
         //this implementation is not
         // const k = reserveCollateral.mul(reserveUSDL);
@@ -169,14 +202,20 @@ describe('LemmaRouter', function () {
         // await defaultSigner.sendTransaction({ to: this.weth.address, value: utils.parseEther("1000") });
 
         //mint USDL
-        const amount = utils.parseEther("250000");
+        amountMintUSDL = "250000";
+        console.log(`Trying to mint ${amountMintUSDL} USDL`);
+        const amount = utils.parseEther(amountMintUSDL);
         await this.collateral.approve(this.usdLemma.address, MaxUint256);
         await this.usdLemma.deposit(amount, 0, MaxUint256, this.collateral.address);
+        console.log("USDL Minting Success");
 
         // approve nft
+        console.log("Trying to approve NFT");
         await this.collateral.approve(this.nonfungiblePositionManager.address, MaxUint256);
         await this.usdLemma.approve(this.nonfungiblePositionManager.address, MaxUint256);
+        console.log("NFT Approval Success");
 
+        console.log("Trying to deploy ArbBot Contract");
         const LemmaUniswapV3ArbBot = await ethers.getContractFactory("LemmaUniswapV3ArbBot");
         this.bot = await LemmaUniswapV3ArbBot.deploy(
             this.collateral.address,
@@ -186,6 +225,7 @@ describe('LemmaRouter', function () {
             this.swapRouter.address,
             MainnetAddresses.FlashLender
         );
+        console.log("Arb Bot Contract Deployment Success");
     });
 
     beforeEach(async function () {
