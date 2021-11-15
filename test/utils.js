@@ -27,8 +27,8 @@ const deployLemmaLocally = async function () {
     if (stderr) {
         console.error(`error: ${stderr}`);
     }
-    console.log(`output: ${stdout}`);
-    console.log("deployment done");
+    // console.log(`output: ${stdout}`);
+    // console.log("deployment done");
 };
 
 
