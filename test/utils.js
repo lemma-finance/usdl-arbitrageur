@@ -27,8 +27,8 @@ const deployLemmaLocally = async function () {
     if (stderr) {
         console.error(`error: ${stderr}`);
     }
-    console.log(`output: ${stdout}`);
-    console.log("deployment done");
+    // console.log(`output: ${stdout}`);
+    // console.log("deployment done");
 };
 
 
@@ -43,7 +43,7 @@ const loadMCDEXInfo = async function () {
 
 const loadLemmaInfo = async function () {
 
-    // await deployLemmaLocally();
+    await deployLemmaLocally();
 
     const data = fs.readFileSync(__dirname + '/../basis-trading-stablecoin/deployments/local.deployment.js', 'utf8');
     return JSON.parse(data);
