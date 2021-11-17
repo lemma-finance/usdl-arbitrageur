@@ -9,3 +9,7 @@ artifacts
 ##solidity-coverage
 coverage.json
 coverage
+
+## files
+scripts/maintest.js
+scripts/maintest2.js

@@ -26,7 +26,6 @@ module.exports = {
   networks: {
     hardhat: {
       forking: {
-        // url: "https://mainnet.infura.io/v3/" + process.env.INFURA_KEY,
         url: "https://eth-mainnet.alchemyapi.io/v2/" + process.env.ALCHEMY_KEY,
         blockNumber: 13526812
       },
@@ -37,7 +36,14 @@ module.exports = {
     },
     local: {
       url: "http://localhost:8545",
-      timeout: 10000000 //1000 secs
+      timeout: 100000000 //1000 secs
+    },
+    arbitrumRinkeby: {
+      accounts: {
+        mnemonic: process.env.MNEMONIC
+      },
+      url: `https://arbitrum-rinkeby.infura.io/v3/${process.env.INFURA_API_KEY}`,
+      timeout: 100000000 //1000 secs
     },
   },
   solidity: {
@@ -53,6 +59,6 @@ module.exports = {
     apiKey: process.env.ETHERSCAN_KEY
   },
   mocha: {
-    timeout: 1000000 //1000 secs
+    timeout: 10000000 //1000 secs
   },
 };

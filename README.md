@@ -11,3 +11,21 @@
 10. npx hardhat node
 11. npx hardhat test --network local
 
+# test script 
+1). Install and compile
+    yarn
+    npx hardhat compile
+
+2). add .env file with below config  
+
+    MNEMONIC=''  
+    INFURA_API_KEY=  
+    ALCHEMY_API_KEY=  
+    ETHERSCAN_API_KEY=  
+    FORK_ENABLED="false"  
+    PRIVATE_KEY=  
+
+3). Run Script on arbitrum rinkeby.   
+```It will perform actual change in your wallet.```
+    
+    npx hardhat run scripts/arb_script.js --network arbitrumRinkeby
