@@ -1,3 +1,3 @@
 [submodule "basis-trading-stablecoin"]
 	path = basis-trading-stablecoin
-	url = git@github.com:lemma-finance/usdl-arbitrageur.git
+	url = git@github.com:lemma-finance/basis-trading-stablecoin.git
