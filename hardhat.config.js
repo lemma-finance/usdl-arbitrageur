@@ -1,6 +1,5 @@
 require("@nomiclabs/hardhat-waffle");
 require("@nomiclabs/hardhat-ethers");
-require("@nomiclabs/hardhat-etherscan");
 require("solidity-coverage");
 
 require("dotenv").config();
@@ -26,7 +25,7 @@ module.exports = {
   networks: {
     hardhat: {
       forking: {
-        url: "https://eth-mainnet.alchemyapi.io/v2/" + process.env.ALCHEMY_KEY,
+        url: `https://arbitrum-rinkeby.infura.io/v3/${process.env.INFURA_API_KEY}`,
         blockNumber: 13526812
       },
       accounts: {
@@ -54,9 +53,6 @@ module.exports = {
         runs: 200
       }
     }
-  },
-  etherscan: {
-    apiKey: process.env.ETHERSCAN_KEY
   },
   mocha: {
     timeout: 10000000 //1000 secs
